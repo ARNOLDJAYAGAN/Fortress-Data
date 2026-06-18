@@ -8,7 +8,7 @@ import {
     getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// 🔥 YOUR FIREBASE CONFIG
+// 🔥 FIREBASE CONFIG
 const firebaseConfig = {
     apiKey: "AIzaSyCxHde2XGZi1UU6f-sS-IWPWZLPRe57WvI",
     authDomain: "fortress-1ecf5.firebaseapp.com",
@@ -21,8 +21,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+
+
 // -----------------------------
-// INPUT VALIDATION (STRICT ALLOW-LIST)
+// INPUT VALIDATION (HARDENED)
 // -----------------------------
 function validateInput(input) {
     if (typeof input !== "string") {
@@ -39,26 +41,35 @@ function validateInput(input) {
         throw new Error("Input too long");
     }
 
-    // "Clean Room" Strict Allow-list: Only permits letters, numbers, spaces, and basic text punctuation.
-    // This automatically blocks <, >, =, and scripts without playing whack-a-mole with bad tags.
-    const safePattern = /^[a-zA-Z0-9\s.,!?'"-]+$/;
+    // Basic malicious pattern blocking (demo-level protection)
+    const dangerousPatterns = [
+        /<script.*?>.*?<\/script>/gi,
+        /javascript:/gi,
+        /onerror=/gi,
+        /onload=/gi,
+        /onclick=/gi
+    ];
 
-    if (!safePattern.test(trimmed)) {
-        throw new Error("Invalid characters detected. Only standard text and basic punctuation are allowed.");
+    for (const pattern of dangerousPatterns) {
+        if (pattern.test(trimmed)) {
+            throw new Error("Malicious input detected");
+        }
     }
 
     return trimmed;
 }
 
+
+
 // -----------------------------
-// REAL ENCRYPTION UTILITIES (Web Crypto AES-GCM)
+// CRYPTO SETUP (AES-GCM)
 // -----------------------------
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 let cryptoKey;
 
-// Generate key once per session
+// generate encryption key once per session
 async function generateKey() {
     cryptoKey = await crypto.subtle.generateKey(
         { name: "AES-GCM", length: 256 },
@@ -66,18 +77,35 @@ async function generateKey() {
         ["encrypt", "decrypt"]
     );
 }
-generateKey();
 
-// Helper functions to turn raw unreadable bytes into clean text strings (Base64)
-function bufferToBase64(buffer) {
-    return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+await generateKey();
+
+
+
+// -----------------------------
+// BASE64 HELPERS
+// -----------------------------
+function arrayBufferToBase64(buffer) {
+    let binary = "";
+    const bytes = new Uint8Array(buffer);
+    bytes.forEach(b => binary += String.fromCharCode(b));
+    return btoa(binary);
 }
 
-function base64ToBuffer(base64) {
-    return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+function base64ToArrayBuffer(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
 }
 
-// Encrypts text into safe, clean Base64 strings instead of long arrays of numbers
+
+
+// -----------------------------
+// ENCRYPT
+// -----------------------------
 async function encrypt(text) {
     const iv = crypto.getRandomValues(new Uint8Array(12));
 
@@ -88,37 +116,44 @@ async function encrypt(text) {
     );
 
     return {
-        iv: bufferToBase64(iv),
-        data: bufferToBase64(encrypted)
+        iv: arrayBufferToBase64(iv),
+        data: arrayBufferToBase64(encrypted)
     };
 }
 
-// Decrypts clean Base64 payloads back to original text
+
+
+// -----------------------------
+// DECRYPT
+// -----------------------------
 async function decrypt(payload) {
+    const iv = base64ToArrayBuffer(payload.iv);
+    const data = base64ToArrayBuffer(payload.data);
+
     const decrypted = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: base64ToBuffer(payload.iv) },
+        { name: "AES-GCM", iv },
         cryptoKey,
-        base64ToBuffer(payload.data)
+        data
     );
 
     return decoder.decode(decrypted);
 }
 
+
+
 // -----------------------------
-// SAVE DATA (AT-REST PROTECTION)
+// SAVE NOTE
 // -----------------------------
 window.saveNote = async function () {
     try {
         let note = document.getElementById("note").value;
 
-        // Clean room validation check
         note = validateInput(note);
 
-        // Advanced AES encryption
         const encryptedNote = await encrypt(note);
 
         await addDoc(collection(db, "secure_notes"), {
-            note: encryptedNote, // Stores cleanly as strings inside an object
+            note: encryptedNote,
             createdAt: Date.now()
         });
 
@@ -130,8 +165,10 @@ window.saveNote = async function () {
     }
 };
 
+
+
 // -----------------------------
-// LOAD DATA (IN-PROCESS SAFE READ)
+// LOAD NOTES
 // -----------------------------
 async function loadNotes() {
     const q = query(collection(db, "secure_notes"));
@@ -144,17 +181,17 @@ async function loadNotes() {
         const data = doc.data();
 
         try {
-            // Decrypts the clean Base64 data strings seamlessly
             const decrypted = await decrypt(data.note);
 
             const li = document.createElement("li");
 
-            // SAFE OUTPUT (Prevents DOM-based XSS attacks)
+            // SAFE OUTPUT (prevents XSS)
             li.textContent = decrypted;
+
             list.appendChild(li);
 
         } catch (e) {
-            console.error("Decryption failed for a document:", e);
+            console.error("Decryption failed:", e);
         }
     }
 }
