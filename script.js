@@ -36,19 +36,25 @@ function decrypt(text) {
 // SAVE DATA (AT-REST PROTECTION)
 // -----------------------------
 window.saveNote = async function () {
-    const note = document.getElementById("note").value;
+    try {
+        let note = document.getElementById("note").value;
 
-    const encryptedNote = encrypt(note);
+        note = validateInput(note);
 
-    await addDoc(collection(db, "secure_notes"), {
-        note: encryptedNote,
-        createdAt: new Date()
-    });
+        const encryptedNote = encrypt(note);
 
-    alert("Note saved securely!");
-    loadNotes();
+        await addDoc(collection(db, "secure_notes"), {
+            note: encryptedNote,
+            createdAt: new Date()
+        });
+
+        alert("Note saved securely!");
+        loadNotes();
+
+    } catch (err) {
+        alert(err.message);
+    }
 };
-
 // -----------------------------
 // LOAD DATA (IN-PROCESS SAFE READ)
 // -----------------------------
