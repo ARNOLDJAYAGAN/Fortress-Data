@@ -154,7 +154,7 @@ window.saveNote = async function () {
 
         await addDoc(collection(db, "secure_notes"), {
             note: encryptedNote,
-            createdAt: Date.now()
+            createdAt: new Date().toISOString()
         });
 
         alert("Note saved securely!");
