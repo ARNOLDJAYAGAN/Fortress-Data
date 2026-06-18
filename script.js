@@ -8,7 +8,7 @@ import {
     getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// 🔥 YOUR FIREBASE CONFIG
+// 🔥 FIREBASE CONFIG
 const firebaseConfig = {
     apiKey: "AIzaSyCxHde2XGZi1UU6f-sS-IWPWZLPRe57WvI",
     authDomain: "fortress-1ecf5.firebaseapp.com",
@@ -21,47 +21,105 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// -----------------------------
-// SIMPLE ENCRYPTION (DEMO ONLY)
-// -----------------------------
-function encrypt(text) {
-    return btoa(text); // base64 encode
-}
 
-function decrypt(text) {
-    return atob(text);
-}
 
 // -----------------------------
-// ✅ INPUT VALIDATION (FIX ADDED)
+// INPUT VALIDATION (HARDENED)
 // -----------------------------
 function validateInput(input) {
-    if (!input || input.trim().length === 0) {
+    if (typeof input !== "string") {
+        throw new Error("Invalid input type");
+    }
+
+    const trimmed = input.trim();
+
+    if (trimmed.length === 0) {
         throw new Error("Input cannot be empty");
     }
 
-    if (input.length > 1000) {
+    if (trimmed.length > 1000) {
         throw new Error("Input too long");
     }
 
-    return input.trim();
+    // Basic malicious pattern blocking (demo-level protection)
+    const dangerousPatterns = [
+        /<script.*?>.*?<\/script>/gi,
+        /javascript:/gi,
+        /onerror=/gi,
+        /onload=/gi
+    ];
+
+    for (const pattern of dangerousPatterns) {
+        if (pattern.test(trimmed)) {
+            throw new Error("Malicious input detected");
+        }
+    }
+
+    return trimmed;
 }
 
+
+
 // -----------------------------
-// SAVE DATA (AT-REST PROTECTION)
+// REAL ENCRYPTION (Web Crypto AES)
+// -----------------------------
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+let cryptoKey;
+
+// generate key once per session
+async function generateKey() {
+    cryptoKey = await crypto.subtle.generateKey(
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"]
+    );
+}
+
+generateKey();
+
+async function encrypt(text) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+
+    const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        cryptoKey,
+        encoder.encode(text)
+    );
+
+    return {
+        iv: Array.from(iv),
+        data: Array.from(new Uint8Array(encrypted))
+    };
+}
+
+async function decrypt(payload) {
+    const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: new Uint8Array(payload.iv) },
+        cryptoKey,
+        new Uint8Array(payload.data)
+    );
+
+    return decoder.decode(decrypted);
+}
+
+
+
+// -----------------------------
+// SAVE NOTE (SECURED)
 // -----------------------------
 window.saveNote = async function () {
     try {
         let note = document.getElementById("note").value;
 
-        // ✅ NOW THIS WORKS
         note = validateInput(note);
 
-        const encryptedNote = encrypt(note);
+        const encryptedNote = await encrypt(note);
 
         await addDoc(collection(db, "secure_notes"), {
             note: encryptedNote,
-            createdAt: new Date()
+            createdAt: Date.now()
         });
 
         alert("Note saved securely!");
@@ -72,8 +130,10 @@ window.saveNote = async function () {
     }
 };
 
+
+
 // -----------------------------
-// LOAD DATA
+// LOAD NOTES (SAFE OUTPUT)
 // -----------------------------
 async function loadNotes() {
     const q = query(collection(db, "secure_notes"));
@@ -82,14 +142,23 @@ async function loadNotes() {
     const list = document.getElementById("notesList");
     list.innerHTML = "";
 
-    snapshot.forEach(doc => {
+    for (const doc of snapshot.docs) {
         const data = doc.data();
-        const decrypted = decrypt(data.note);
 
-        const li = document.createElement("li");
-        li.textContent = decrypted;
-        list.appendChild(li);
-    });
+        try {
+            const decrypted = await decrypt(data.note);
+
+            const li = document.createElement("li");
+
+            // SAFE OUTPUT (prevents XSS)
+            li.textContent = decrypted;
+
+            list.appendChild(li);
+
+        } catch (e) {
+            console.error("Decryption failed:", e);
+        }
+    }
 }
 
 loadNotes();
