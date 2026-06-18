@@ -25,11 +25,26 @@ const db = getFirestore(app);
 // SIMPLE ENCRYPTION (DEMO ONLY)
 // -----------------------------
 function encrypt(text) {
-    return btoa(text); // base64 encode (simple demo)
+    return btoa(text); // base64 encode
 }
 
 function decrypt(text) {
     return atob(text);
+}
+
+// -----------------------------
+// ✅ INPUT VALIDATION (FIX ADDED)
+// -----------------------------
+function validateInput(input) {
+    if (!input || input.trim().length === 0) {
+        throw new Error("Input cannot be empty");
+    }
+
+    if (input.length > 1000) {
+        throw new Error("Input too long");
+    }
+
+    return input.trim();
 }
 
 // -----------------------------
@@ -39,6 +54,7 @@ window.saveNote = async function () {
     try {
         let note = document.getElementById("note").value;
 
+        // ✅ NOW THIS WORKS
         note = validateInput(note);
 
         const encryptedNote = encrypt(note);
@@ -55,8 +71,9 @@ window.saveNote = async function () {
         alert(err.message);
     }
 };
+
 // -----------------------------
-// LOAD DATA (IN-PROCESS SAFE READ)
+// LOAD DATA
 // -----------------------------
 async function loadNotes() {
     const q = query(collection(db, "secure_notes"));
