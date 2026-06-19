@@ -127,18 +127,27 @@ async function encrypt(text) {
 // DECRYPT
 // -----------------------------
 async function decrypt(payload) {
-    const iv = base64ToArrayBuffer(payload.iv);
-    const data = base64ToArrayBuffer(payload.data);
+    try {
+        if (!cryptoKey) {
+            throw new Error("Encryption key not ready");
+        }
 
-    const decrypted = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv },
-        cryptoKey,
-        data
-    );
+        const iv = base64ToArrayBuffer(payload.iv);
+        const data = base64ToArrayBuffer(payload.data);
 
-    return decoder.decode(decrypted);
+        const decrypted = await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv },
+            cryptoKey,
+            data
+        );
+
+        return decoder.decode(decrypted);
+
+    } catch (err) {
+        console.error("Decrypt failed:", err);
+        return "[Unable to decrypt note]";
+    }
 }
-
 
 
 // -----------------------------
