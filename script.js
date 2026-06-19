@@ -126,19 +126,34 @@ async function encrypt(text) {
 // -----------------------------
 // DECRYPT
 // -----------------------------
-async function decrypt(payload) {
-    const iv = base64ToArrayBuffer(payload.iv);
-    const data = base64ToArrayBuffer(payload.data);
+async function generateKey() {
+    const savedKey = sessionStorage.getItem("cryptoKey");
 
-    const decrypted = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv },
-        cryptoKey,
-        data
+    if (savedKey) {
+        const raw = base64ToArrayBuffer(savedKey);
+
+        cryptoKey = await crypto.subtle.importKey(
+            "raw",
+            raw,
+            "AES-GCM",
+            true,
+            ["encrypt", "decrypt"]
+        );
+
+        return;
+    }
+
+    cryptoKey = await crypto.subtle.generateKey(
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"]
     );
 
-    return decoder.decode(decrypted);
+    const exported = await crypto.subtle.exportKey("raw", cryptoKey);
+    sessionStorage.setItem("cryptoKey", arrayBufferToBase64(exported));
 }
 
+await generateKey();
 
 
 // -----------------------------
